@@ -32,3 +32,6 @@ pyo3 = { version = "0.25", features = ["auto-initialize"] }
 
 [features]
 default = ["pyo3/extension-module"]
+
+[profile.release]
+lto = true
