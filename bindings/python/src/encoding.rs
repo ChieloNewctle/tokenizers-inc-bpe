@@ -65,6 +65,10 @@ impl PyEncoding {
         Ok(self.encoding.len())
     }
 
+    fn __eq__(&self, other: &Self) -> bool {
+        self.encoding == other.encoding
+    }
+
     /// Merge the list of encodings into one final :class:`~tokenizers.Encoding`
     ///
     /// Args:
