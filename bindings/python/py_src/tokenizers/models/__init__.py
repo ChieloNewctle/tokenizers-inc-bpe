@@ -6,3 +6,4 @@ BPE = models.BPE
 Unigram = models.Unigram
 WordLevel = models.WordLevel
 WordPiece = models.WordPiece
+IncrementalBpe = models.IncrementalBpe

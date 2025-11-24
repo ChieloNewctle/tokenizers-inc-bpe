@@ -1,6 +1,7 @@
 //! Popular tokenizer models.
 
 pub mod bpe;
+pub mod inc_bpe;
 pub mod unigram;
 pub mod wordlevel;
 pub mod wordpiece;
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::models::bpe::{BpeTrainer, BPE};
+use crate::models::inc_bpe::IncrementalBpe;
 use crate::models::unigram::{Unigram, UnigramTrainer};
 use crate::models::wordlevel::{WordLevel, WordLevelTrainer};
 use crate::models::wordpiece::{WordPiece, WordPieceTrainer};
@@ -67,6 +69,7 @@ pub enum ModelWrapper {
     WordPiece(WordPiece),
     WordLevel(WordLevel),
     Unigram(Unigram),
+    IncrementalBpe(IncrementalBpe),
 }
 
 impl<'de> Deserialize<'de> for ModelWrapper {
@@ -87,6 +90,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
             WordPiece,
             WordLevel,
             Unigram,
+            IncrementalBpe,
         }
 
         #[derive(Deserialize)]
@@ -122,6 +126,9 @@ impl<'de> Deserialize<'de> for ModelWrapper {
                 EnumType::Unigram => ModelWrapper::Unigram(
                     serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
                 ),
+                EnumType::IncrementalBpe => ModelWrapper::IncrementalBpe(
+                    serde_json::from_value(model.rest).map_err(serde::de::Error::custom)?,
+                ),
             },
             ModelHelper::Legacy(value) => {
                 let untagged = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
@@ -139,6 +146,7 @@ impl<'de> Deserialize<'de> for ModelWrapper {
 impl_enum_from!(WordLevel, ModelWrapper, WordLevel);
 impl_enum_from!(WordPiece, ModelWrapper, WordPiece);
 impl_enum_from!(BPE, ModelWrapper, BPE);
+impl_enum_from!(IncrementalBpe, ModelWrapper, IncrementalBpe);
 impl_enum_from!(Unigram, ModelWrapper, Unigram);
 
 impl Model for ModelWrapper {
@@ -150,6 +158,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.tokenize(tokens),
             Self::BPE(t) => t.tokenize(tokens),
             Self::Unigram(t) => t.tokenize(tokens),
+            Self::IncrementalBpe(t) => t.tokenize(tokens),
         }
     }
 
@@ -159,6 +168,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.token_to_id(token),
             Self::BPE(t) => t.token_to_id(token),
             Self::Unigram(t) => t.token_to_id(token),
+            Self::IncrementalBpe(t) => t.token_to_id(token),
         }
     }
 
@@ -168,6 +178,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.id_to_token(id),
             Self::BPE(t) => t.id_to_token(id),
             Self::Unigram(t) => t.id_to_token(id),
+            Self::IncrementalBpe(t) => t.id_to_token(id),
         }
     }
 
@@ -177,6 +188,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab(),
             Self::BPE(t) => t.get_vocab(),
             Self::Unigram(t) => t.get_vocab(),
+            Self::IncrementalBpe(t) => t.get_vocab(),
         }
     }
 
@@ -186,6 +198,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_vocab_size(),
             Self::BPE(t) => t.get_vocab_size(),
             Self::Unigram(t) => t.get_vocab_size(),
+            Self::IncrementalBpe(t) => t.get_vocab_size(),
         }
     }
 
@@ -195,6 +208,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.save(folder, name),
             Self::BPE(t) => t.save(folder, name),
             Self::Unigram(t) => t.save(folder, name),
+            Self::IncrementalBpe(t) => t.save(folder, name),
         }
     }
 
@@ -204,6 +218,7 @@ impl Model for ModelWrapper {
             Self::WordPiece(t) => t.get_trainer().into(),
             Self::BPE(t) => t.get_trainer().into(),
             Self::Unigram(t) => t.get_trainer().into(),
+            Self::IncrementalBpe(t) => t.get_trainer().into(),
         }
     }
 }
@@ -213,6 +228,7 @@ impl ModelWrapper {
         match self {
             Self::Unigram(model) => model.clear_cache(),
             Self::BPE(model) => model.clear_cache(),
+            Self::IncrementalBpe(model) => model.clear_cache(),
             _ => (),
         }
     }
@@ -220,6 +236,7 @@ impl ModelWrapper {
         match self {
             Self::Unigram(model) => model.resize_cache(capacity),
             Self::BPE(model) => model.resize_cache(capacity),
+            Self::IncrementalBpe(model) => model.resize_cache(capacity),
             _ => (),
         }
     }

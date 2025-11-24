@@ -589,3 +589,38 @@ class WordPiece(Model):
             A :obj:`List` of :class:`~tokenizers.Token`: The generated tokens
         """
         pass
+
+class IncrementalBpe(Model):
+    def __init__(
+        self,
+        vocab=None,
+        merges=None,
+        unk_token=None,
+        fuse_unk=None,
+        byte_fallback=False,
+        ignore_merges=False,
+    ):
+        pass
+
+    @classmethod
+    def from_file(cls, vocab, merge, **kwargs):
+        pass
+
+    @staticmethod
+    def from_bpe(bpe, cache_capacity=None):
+        pass
+
+    def get_trainer(self):
+        pass
+
+    def id_to_token(self, id):
+        pass
+
+    def save(self, folder, prefix):
+        pass
+
+    def token_to_id(self, tokens):
+        pass
+
+    def tokenize(self, sequence):
+        pass

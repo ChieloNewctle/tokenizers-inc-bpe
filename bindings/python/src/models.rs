@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 use pyo3::types::*;
 use serde::{Deserialize, Serialize};
 use tk::models::bpe::{BpeBuilder, Merges, BPE};
+use tk::models::inc_bpe::IncrementalBpe;
 use tk::models::unigram::Unigram;
 use tk::models::wordlevel::WordLevel;
 use tk::models::wordpiece::{WordPiece, WordPieceBuilder};
@@ -49,6 +50,10 @@ impl PyModel {
                 .into_any()
                 .into(),
             ModelWrapper::Unigram(_) => Py::new(py, (PyUnigram {}, base))?
+                .into_pyobject(py)?
+                .into_any()
+                .into(),
+            ModelWrapper::IncrementalBpe(_) => Py::new(py, (PyIncrementalBpe {}, base))?
                 .into_pyobject(py)?
                 .into_any()
                 .into(),
@@ -572,6 +577,180 @@ impl PyBPE {
     }
 }
 
+#[pyclass(extends = PyModel, module = "tokenizers.models", name = "IncrementalBpe")]
+pub struct PyIncrementalBpe {}
+
+#[pymethods]
+impl PyIncrementalBpe {
+    #[getter]
+    fn get_unk_token_id(self_: PyRef<Self>) -> u32 {
+        getter!(self_, IncrementalBpe, unk_token_id())
+    }
+
+    #[getter]
+    fn get_fuse_unk(self_: PyRef<Self>) -> bool {
+        getter!(self_, IncrementalBpe, bpe().fuse_unk)
+    }
+
+    #[getter]
+    fn get_byte_fallback(self_: PyRef<Self>) -> bool {
+        getter!(self_, IncrementalBpe, bpe().byte_fallback)
+    }
+
+    #[getter]
+    fn get_ignore_merges(self_: PyRef<Self>) -> bool {
+        getter!(self_, IncrementalBpe, bpe().ignore_merges)
+    }
+
+    #[new]
+    #[pyo3(
+        signature = (vocab=None, merges=None, **kwargs),
+        text_signature = "(\
+            self, \
+            vocab=None, merges=None, unk_token=None, fuse_unk=None, \
+            byte_fallback=False, ignore_merges=False, cache_capacity=None\
+        )",
+    )]
+    fn new(
+        py: Python<'_>,
+        vocab: Option<PyVocab>,
+        merges: Option<PyMerges>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<(Self, PyModel)> {
+        if (vocab.is_some() && merges.is_none()) || (vocab.is_none() && merges.is_some()) {
+            return Err(exceptions::PyValueError::new_err(
+                "`vocab` and `merges` must be both specified",
+            ));
+        }
+
+        let mut builder = BPE::builder().cache_capacity(0);
+        let mut cache_capacity = None::<usize>;
+        if let (Some(vocab), Some(merges)) = (vocab, merges) {
+            match (vocab, merges) {
+                (PyVocab::Vocab(vocab), PyMerges::Merges(merges)) => {
+                    let vocab: AHashMap<_, _> = vocab.into_iter().collect();
+                    builder = builder.vocab_and_merges(vocab, merges);
+                }
+                (PyVocab::Filename(vocab_filename), PyMerges::Filename(merges_filename)) => {
+                    deprecation_warning(
+                    py,
+                    "0.9.0",
+                    "BPE.__init__ will not create from files anymore, try `BPE.from_file` instead",
+                )?;
+                    builder =
+                        builder.files(vocab_filename.to_string(), merges_filename.to_string());
+                }
+                _ => {
+                    return Err(exceptions::PyValueError::new_err(
+                        "`vocab` and `merges` must be both be from memory or both filenames",
+                    ));
+                }
+            }
+        }
+
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: String = key.extract()?;
+                match key.as_ref() {
+                    "dropout" => {
+                        if let Some(dropout) = value.extract()? {
+                            builder = builder.dropout(dropout);
+                        }
+                    }
+                    "unk_token" => {
+                        if let Some(unk) = value.extract()? {
+                            builder = builder.unk_token(unk);
+                        }
+                    }
+                    "fuse_unk" => builder = builder.fuse_unk(value.extract()?),
+                    "byte_fallback" => builder = builder.byte_fallback(value.extract()?),
+                    "ignore_merges" => builder = builder.ignore_merges(value.extract()?),
+                    "cache_capacity" => cache_capacity = value.extract()?,
+                    _ => println!("Ignored unknown kwarg option {key}"),
+                };
+            }
+        }
+
+        match builder.build() {
+            Err(e) => Err(exceptions::PyException::new_err(format!(
+                "Error while initializing BPE: {e}"
+            ))),
+            Ok(bpe) => {
+                let tokenizer = IncrementalBpe::new(bpe, cache_capacity).map_err(|e| {
+                    exceptions::PyException::new_err(format!(
+                        "Error when building incremental bpe tokenizer: {e}"
+                    ))
+                })?;
+                Ok((Self {}, tokenizer.into()))
+            }
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (bpe, cache_capacity=None))]
+    fn from_bpe<'py>(
+        py: Python<'py>,
+        bpe: PyRef<PyBPE>,
+        cache_capacity: Option<usize>,
+    ) -> PyResult<Py<Self>> {
+        let bpe = getter!(bpe, BPE, clone());
+        let tokenizer = IncrementalBpe::new(bpe, cache_capacity).map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error when building incremental bpe tokenizer: {e}"
+            ))
+        })?;
+        let model = PyModel::from(tokenizer);
+        Py::new(py, (PyIncrementalBpe {}, model))
+    }
+
+    fn _clear_cache(self_: PyRef<Self>) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while clearing Incremental BPE cache: {e}"
+            ))
+        })?;
+        model.clear_cache();
+        Ok(())
+    }
+
+    #[pyo3(signature = (capacity))]
+    fn _resize_cache(self_: PyRef<Self>, capacity: usize) -> PyResult<()> {
+        let super_ = self_.as_ref();
+        let mut model = super_.model.write().map_err(|e| {
+            exceptions::PyException::new_err(format!(
+                "Error while resizing Incremental BPE cache: {e}"
+            ))
+        })?;
+        model.resize_cache(capacity);
+        Ok(())
+    }
+
+    #[classmethod]
+    #[pyo3(signature = (vocab, merges, **kwargs))]
+    fn from_file(
+        _cls: &Bound<'_, PyType>,
+        py: Python,
+        vocab: &str,
+        merges: &str,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (vocab, merges) = BPE::read_file(vocab, merges).map_err(|e| {
+            exceptions::PyException::new_err(format!("Error while reading BPE files: {e}"))
+        })?;
+        let vocab = vocab.into_iter().collect();
+        Py::new(
+            py,
+            Self::new(
+                py,
+                Some(PyVocab::Vocab(vocab)),
+                Some(PyMerges::Merges(merges)),
+                kwargs,
+            )?,
+        )
+    }
+}
+
 /// An implementation of the WordPiece algorithm
 ///
 /// Args:
@@ -933,6 +1112,7 @@ pub fn models(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWordPiece>()?;
     m.add_class::<PyWordLevel>()?;
     m.add_class::<PyUnigram>()?;
+    m.add_class::<PyIncrementalBpe>()?;
     Ok(())
 }
 

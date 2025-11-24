@@ -500,6 +500,10 @@ impl BPE {
         }
         Ok(ret)
     }
+
+    pub(crate) fn cache_capacity(&self) -> usize {
+        self.cache.as_ref().map(|cache| cache.capacity).unwrap_or(0)
+    }
 }
 
 impl Model for BPE {
