@@ -362,8 +362,14 @@ impl BPE {
 
     /// Resize the cache
     pub fn resize_cache(&mut self, capacity: usize) {
+        if capacity == 0 {
+            self.cache.take();
+            return;
+        }
         if let Some(ref mut cache) = self.cache {
             cache.resize(capacity);
+        } else {
+            self.cache = Some(Cache::new(capacity));
         }
     }
 
