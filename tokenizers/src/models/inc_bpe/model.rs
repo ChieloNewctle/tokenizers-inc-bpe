@@ -287,7 +287,7 @@ impl IncrementalBpe {
         }
         let mut res = Vec::with_capacity(words.len());
         let mut last_pos = sequence.len();
-        for (idx, token) in state.current_token_seq() {
+        for (idx, token) in state.current_token_chain() {
             let pos = words[(idx + 1).saturating_sub(token.skip_len as usize)].start as usize;
             res.push(self.token_res(token.token_id.inner(), pos, last_pos));
             last_pos = pos;
