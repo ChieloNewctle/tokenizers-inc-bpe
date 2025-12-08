@@ -5,6 +5,7 @@
 
 extern crate tokenizers as tk;
 
+use mimalloc::MiMalloc;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -18,6 +19,10 @@ static TOKIO_RUNTIME: Lazy<Arc<Runtime>> = Lazy::new(|| {
         .expect("Failed to create global Tokio runtime");
     Arc::new(rt)
 });
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 mod decoders;
 mod encoding;
 mod error;
