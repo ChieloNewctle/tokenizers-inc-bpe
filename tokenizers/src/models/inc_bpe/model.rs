@@ -121,6 +121,7 @@ fn build_dict_from_bpe(bpe: &BPE) -> Result<(NormalizedDict, FallbackBytes), Err
             .unwrap_or_default();
         if let Some(byte) = convert_byte_fallback(&token).filter(|_| bpe.byte_fallback) {
             fallback_bytes[byte as usize] = token_id;
+            return Bytes::default();
         } else if token.len() <= 4 && token.chars().count() == 1 {
             singletons.insert(token_id);
         }
@@ -248,7 +249,7 @@ impl IncrementalBpe {
                 return vec![WordSeq::new(id, 0)];
             }
         }
-        let mut res = Vec::with_capacity(text.len());
+        let mut res = Vec::with_capacity(text.len() + 1);
         let mut left = 0;
         for right in 1..text.len() + 1 {
             if !text.is_char_boundary(right) {
@@ -279,21 +280,46 @@ impl IncrementalBpe {
     }
 
     pub fn tokenize_without_cache(&self, sequence: &str) -> Vec<crate::Token> {
-        let words = self.split_text(sequence);
-        let mut state = self.tokenization();
-        state.reserve(words.len());
+        let words = {
+            let mut words = self.split_text(sequence);
+            words.push(WordSeq {
+                id: TokenId::MAX,
+                start: sequence.len() as _,
+            });
+            words
+        };
+        let mut state = self.tokenizer.eager();
+        state.reserve(256);
+        let mut res = Vec::with_capacity(words.len());
+        let mut word_pos = 0usize;
         for word in &words {
             state.feed(word.id);
+            for output in &mut state {
+                let next_word_pos = word_pos + output.skip_len as usize;
+                res.push(self.token_res(
+                    output.token_id.inner(),
+                    words[word_pos].start as _,
+                    words[next_word_pos].start as _,
+                ));
+                word_pos = next_word_pos;
+            }
         }
-        let mut res = Vec::with_capacity(words.len());
-        let mut last_pos = sequence.len();
-        for (idx, token) in state.current_token_chain() {
-            let pos = words[(idx + 1).saturating_sub(token.skip_len as usize)].start as usize;
-            res.push(self.token_res(token.token_id.inner(), pos, last_pos));
-            last_pos = pos;
-        }
-        res.reverse();
         res
+        // let words = self.split_text(sequence);
+        // let mut state = self.tokenization();
+        // state.reserve(words.len());
+        // for word in &words {
+        //     state.feed(word.id);
+        // }
+        // let mut res = Vec::with_capacity(words.len());
+        // let mut last_pos = sequence.len();
+        // for (idx, token) in state.current_token_chain() {
+        //     let pos = words[(idx + 1).saturating_sub(token.skip_len as usize)].start as usize;
+        //     res.push(self.token_res(token.token_id.inner(), pos, last_pos));
+        //     last_pos = pos;
+        // }
+        // res.reverse();
+        // res
     }
 
     pub(crate) fn resize_cache(&mut self, capacity: usize) {
